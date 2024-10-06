@@ -7,68 +7,84 @@ import (
 	"strings"
 
 	"github.com/caarlos0/env"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 	"github.com/pedrosaraiva1/devops-boards/internal/azure"
 	"github.com/pedrosaraiva1/devops-boards/internal/todoist"
 	"github.com/pedrosaraiva1/devops-boards/pkg"
 )
 
-func main() {
-	// parse
+const (
+	limit = 30
+)
+
+func loadConfig() pkg.Config {
 	var cfg pkg.Config
 	err := env.Parse(&cfg)
-
 	if err != nil {
 		log.Fatal(err)
-
 	}
+	return cfg
+}
+func CreateNewWorkItem(ctx context.Context, azureClient azure.Client, todoistClient todoist.Client, cfg pkg.Config, workItem workitemtracking.WorkItemReference) {
+	log.Printf("WorkItem: %v", workItem)
+	wk, err := azureClient.GetWorkItem(ctx, cfg.AzureProjectID, workItem.Id)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	task, err := todoistClient.AddTask(todoist.Task{
+		Content:   strconv.Itoa(*wk.Id) + "-" + (*wk.Fields)["System.Title"].(string) + " " + (*wk.Fields)["System.State"].(string),
+		ProjectID: cfg.TodoIstProjectID,
+	})
+	if err != nil {
+		log.Fatalf("Error creating task: %s", err)
+	}
+	log.Printf("Task: %v", task)
+}
+
+func ProcessCompletedTasks(ctx context.Context, azureClient azure.Client, todoistClient todoist.Client, cfg pkg.Config) {
+	response, err := todoistClient.GetCompletedTasks(ctx, cfg.TodoIstProjectID, limit, 0, "", "", false, false)
+	if err != nil {
+		log.Fatalf("Error getting completed tasks: %s", err)
+	}
+	log.Printf("Completed Tasks: %v", response)
+
+	for _, item := range response.Items {
+		var id = strings.Split(item.Content, "-")[0]
+		var idInt int
+		idInt, err = strconv.Atoi(id)
+		if err != nil {
+			log.Fatalf("Error converting id to int: %s", err)
+		}
+		log.Printf("Item: %v", strings.Split(item.Content, "-")[0])
+		err = azureClient.UpdateWorkItemState(ctx, cfg.AzureProjectID, idInt, "Ready")
+		if err != nil {
+			log.Fatalf("Error updating work item: %s", err)
+		}
+	}
+}
+
+func main() {
+	// parse
+	cfg := loadConfig()
+
 	ctx := context.Background()
 
-	workclient, err := azure.NewWorkItemClient(ctx, cfg.AZURE_ORGANIZATION_URL, cfg.AZURE_PERSONAL_ACCESS_TOKEN)
+	client := todoist.NewClient(cfg.TodoIstAPIKey)
+
+	workclient, err := azure.NewWorkItemClient(ctx, cfg.AzureOrgURL, cfg.AzurePersonalAccessToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	resp, err := workclient.QueryWorkItems(ctx, cfg.AZURE_PROJECT, cfg.AZURE_QUERY_ID)
+	resp, err := workclient.QueryWorkItems(ctx, cfg.AzureProjectID, cfg.AzureQueryID)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	client := todoist.NewClient(cfg.TODOIST_API_KEY)
 
 	for _, workItem := range *resp.WorkItems {
-		log.Printf("WorkItem: %v", workItem)
-		wk, err := workclient.GetWorkItem(ctx, cfg.AZURE_PROJECT, workItem.Id)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		task, err := client.AddTask(todoist.Task{
-			Content:   strconv.Itoa(*wk.Id) + "-" + (*wk.Fields)["System.Title"].(string) + " " + (*wk.Fields)["System.State"].(string),
-			ProjectID: cfg.TODOIST_PROJECT_ID,
-		})
-		if err != nil {
-			log.Fatalf("Error creating task: %s", err)
-		}
-
-		response, err := client.GetCompletedTasks(ctx, cfg.TODOIST_PROJECT_ID, 30, 0, "", "", false, false)
-		if err != nil {
-			log.Fatalf("Error getting completed tasks: %s", err)
-		}
-		log.Printf("Completed Tasks: %v", response)
-		log.Print(task)
-		log.Printf("WorkItem: %v", wk)
-
-		for _, item := range response.Items {
-			var id = strings.Split(item.Content, "-")[0]
-			idInt, err := strconv.Atoi(id)
-			if err != nil {
-				log.Fatalf("Error converting id to int: %s", err)
-			}
-			log.Printf("Item: %v", strings.Split(item.Content, "-")[0])
-			err = workclient.UpdateWorkItemState(ctx, cfg.AZURE_PROJECT, idInt, "Ready")
-			if err != nil {
-				log.Fatalf("Error updating work item: %s", err)
-			}
-		}
+		CreateNewWorkItem(ctx, workclient, *client, cfg, workItem)
 	}
+
+	ProcessCompletedTasks(ctx, workclient, *client, cfg)
 }

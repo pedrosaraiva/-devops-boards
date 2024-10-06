@@ -20,7 +20,7 @@ func NewClient(apiKey string) *Client {
 }
 
 func (c *Client) GetCompletedTasks(ctx context.Context, projectID string, limit, offset int, until, since string, annotateNotes, annotateItems bool) (*CompletedTasksResponse, error) {
-	completedTaskUrl := "completed/get_all"
+	completedTaskURL := "completed/get_all"
 	params := url.Values{}
 	if projectID != "" {
 		params.Add("project_id", projectID)
@@ -40,7 +40,7 @@ func (c *Client) GetCompletedTasks(ctx context.Context, projectID string, limit,
 	params.Add("annotate_notes", strconv.FormatBool(annotateNotes))
 	params.Add("annotate_items", strconv.FormatBool(annotateItems))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/%s?%s", c.BaseURL, completedTaskUrl, params.Encode()), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s?%s", c.BaseURL, completedTaskURL, params.Encode()), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (c *Client) GetCompletedTasks(ctx context.Context, projectID string, limit,
 	}
 
 	var completedTasksResponse CompletedTasksResponse
-	if err := json.NewDecoder(resp.Body).Decode(&completedTasksResponse); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&completedTasksResponse); err != nil {
 		return nil, err
 	}
 
@@ -66,7 +66,7 @@ func (c *Client) GetCompletedTasks(ctx context.Context, projectID string, limit,
 }
 
 func (c *Client) AddTask(task Task) (*CreateTaskResponse, error) {
-	addTaskUrl := "sync"
+	addTaskURL := "sync"
 	command := Command{
 		Type:   "item_add",
 		TempID: "43f7ed23-a038-46b5-b2c9-4abda9097ffa",
@@ -83,10 +83,11 @@ func (c *Client) AddTask(task Task) (*CreateTaskResponse, error) {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/%s", c.BaseURL, addTaskUrl), bytes.NewBuffer(body))
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s", c.BaseURL, addTaskURL), bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	req = req.WithContext(context.Background())
 
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -99,7 +100,7 @@ func (c *Client) AddTask(task Task) (*CreateTaskResponse, error) {
 	defer resp.Body.Close()
 
 	var response CreateTaskResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
