@@ -17,6 +17,10 @@ func main() {
 	var cfg pkg.Config
 	err := env.Parse(&cfg)
 
+	if err != nil {
+		log.Fatal(err)
+
+	}
 	ctx := context.Background()
 
 	workclient, err := azure.NewWorkItemClient(ctx, cfg.AZURE_ORGANIZATION_URL, cfg.AZURE_PERSONAL_ACCESS_TOKEN)
